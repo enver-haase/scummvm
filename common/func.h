@@ -385,15 +385,23 @@ struct Functor0 {
  *
  * myFunctor();
  */
+/*
+ * The FunctorNMem::operator() below are marked optnone for the subleq target: the backend
+ * miscompiles a pointer-to-member call whose member pointer lives in a class field, at -O1 and
+ * above -- the call lands on a tiny address instead of the member. A standalone probe shows
+ * ordinary pointers-to-member work, so this is that lowering rather than the ABI. See also
+ * GUI::ThemeParser::CustomXMLKeyLayout::doCallback in common/formats/xmlparser.h, which is the
+ * same construct and needed the same thing.
+ */
 template<class Res, class T>
 class Functor0Mem : public Functor0<Res> {
 public:
 	typedef Res (T::*FuncType)();
 
-	Functor0Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	__attribute__((optnone)) Functor0Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	Res operator()() const override {
+	__attribute__((optnone)) Res operator()() const override {
 		return (_t->*_func)();
 	}
 private:
@@ -453,10 +461,10 @@ class Functor1Mem : public Functor1<Arg, Res> {
 public:
 	typedef Res (T::*FuncType)(Arg);
 
-	Functor1Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	__attribute__((optnone)) Functor1Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	Res operator()(Arg v1) const override {
+	__attribute__((optnone)) Res operator()(Arg v1) const override {
 		return (_t->*_func)(v1);
 	}
 private:
@@ -509,10 +517,10 @@ class Functor2Mem : public Functor2<Arg1, Arg2, Res> {
 public:
 	typedef Res (T::*FuncType)(Arg1, Arg2);
 
-	Functor2Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	__attribute__((optnone)) Functor2Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	Res operator()(Arg1 v1, Arg2 v2) const override {
+	__attribute__((optnone)) Res operator()(Arg1 v1, Arg2 v2) const override {
 		return (_t->*_func)(v1, v2);
 	}
 private:
