@@ -952,7 +952,23 @@ void SurfaceSdlGraphicsManager::initGraphicsSurface() {
 	if (_videoMode.fullscreen)
 		flags |= SDL_FULLSCREEN;
 
-	_hwScreen = SDL_SetVideoMode(_videoMode.hardwareWidth, _videoMode.hardwareHeight, 16, flags);
+	/*
+	 * Ask for the display's own depth rather than a fixed 16 bits. When the two differ, SDL 1.2
+	 * satisfies the request with a shadow surface and converts every pixel on every update; on
+	 * hardware without shift or multiply instructions that conversion is the whole frame time.
+	 * Matching the display also makes detectSupportedFormats() offer that format first, so the
+	 * engine renders in it and the blit to the screen is a row copy.
+	 */
+	int hwBpp = 16;
+#if !SDL_VERSION_ATLEAST(2, 0, 0)
+	{
+		const SDL_VideoInfo *vi = SDL_GetVideoInfo();
+
+		if (vi && vi->vfmt && vi->vfmt->BitsPerPixel >= 8)
+			hwBpp = vi->vfmt->BitsPerPixel;
+	}
+#endif
+	_hwScreen = SDL_SetVideoMode(_videoMode.hardwareWidth, _videoMode.hardwareHeight, hwBpp, flags);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	_isDoubleBuf = false;
 	_isHwPalette = false;
