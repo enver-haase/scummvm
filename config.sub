@@ -1263,6 +1263,7 @@ case $cpu-$vendor in
 			| sh | shl \
 			| sh[1234] | sh[24]a | sh[24]ae[lb] | sh[23]e | she[lb] | sh[lb]e \
 			| sh[1234]e[lb] |  sh[12345][lb]e | sh[23]ele | sh64 | sh64le \
+			| subleq \
 			| sparc | sparc64 | sparc64b | sparc64v | sparc86x | sparclet \
 			| sparclite \
 			| sparcv8 | sparcv9 | sparcv9b | sparcv9v | sv1 | sx* \

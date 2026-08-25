@@ -37,6 +37,9 @@ SdlEventSource::SdlEventSource()
 	  _lastHatPosition(SDL_HAT_CENTERED), _mouseX(0), _mouseY(0), _engineRunning(false)
 	  {
 	int joystick_num = ConfMan.getInt("joystick_num");
+#if defined(SDL_JOYSTICK_DISABLED) && SDL_JOYSTICK_DISABLED
+	joystick_num = -1;
+#endif
 	if (joystick_num >= 0) {
 		// Initialize SDL joystick subsystem
 		if (SDL_InitSubSystem(SDL_INIT_JOYSTICK) == -1) {
@@ -416,6 +419,11 @@ bool SdlEventSource::handleKeyUp(SDL_Event &ev, Common::Event &event) {
 }
 
 void SdlEventSource::openJoystick(int joystickIndex) {
+#if defined(SDL_JOYSTICK_DISABLED) && SDL_JOYSTICK_DISABLED
+	// This SDL has no joystick support compiled in (a platform with no joystick device at all,
+	// e.g. a framebuffer-only machine), so the API is not there to call.
+	debug(5, "SDL built without joystick support, ignoring joystick %d", joystickIndex);
+#else
 	if (SDL_NumJoysticks() > joystickIndex) {
 			_joystick = SDL_JoystickOpen(joystickIndex);
 			debug("Using joystick: %s",
@@ -424,13 +432,18 @@ void SdlEventSource::openJoystick(int joystickIndex) {
 	} else {
 		debug(5, "Invalid joystick: %d", joystickIndex);
 	}
+#endif
 }
 
 void SdlEventSource::closeJoystick() {
+#if defined(SDL_JOYSTICK_DISABLED) && SDL_JOYSTICK_DISABLED
+	// see openJoystick(): _joystick can never have been opened
+#else
 	if (_joystick) {
 		SDL_JoystickClose(_joystick);
 		_joystick = nullptr;
 	}
+#endif
 }
 
 bool SdlEventSource::isJoystickConnected() const {

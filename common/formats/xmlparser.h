@@ -69,6 +69,15 @@ class SeekableReadStream;
 
 
 
+/*
+ * doCallback below is marked optnone for the subleq target: the backend miscompiles this
+ * pointer-to-member dispatch at -O1 and above -- the call lands on a tiny address (0x2f8) instead
+ * of the member, as if the ptr/adj pair were loaded wrongly -- while a standalone probe shows
+ * ordinary pointers-to-member work, so it is this lowering rather than the ABI. Building the whole
+ * theme parser at -O0 instead costs minutes of launcher drawing on that machine; this costs one
+ * unoptimized indirect call per XML key. Nothing about it is subleq-specific to read, so it is
+ * left unconditional rather than hidden behind an #ifdef.
+ */
 #define CUSTOM_XML_PARSER(parserName) \
 	protected: \
 	typedef parserName kLocalParserName; \
@@ -76,7 +85,7 @@ class SeekableReadStream;
 	struct CustomXMLKeyLayout : public XMLKeyLayout {\
 		typedef bool (parserName::*ParserCallback)(ParserNode *node);\
 		ParserCallback callback;\
-		bool doCallback(XMLParser *parent, ParserNode *node) override {return ((kLocalParserName *)parent->*callback)(node);} };\
+		__attribute__((optnone)) bool doCallback(XMLParser *parent, ParserNode *node) override {return ((kLocalParserName *)parent->*callback)(node);} };\
 	void buildLayout() override { \
 		Common::Stack<XMLKeyLayout *> layout; \
 		CustomXMLKeyLayout *lay = 0; \

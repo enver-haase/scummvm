@@ -89,6 +89,7 @@ public:
 	void setWindowCaption(const Common::U32String &caption) override;
 	void addSysArchivesToSearchSet(Common::SearchSet &s, int priority = 0) override;
 	Common::MutexInternal *createMutex() override;
+	void tickTimerManager(uint32 millis);   /* the timer manager is not a thread here */
 	uint32 getMillis(bool skipRecord = false) override;
 	void delayMillis(uint msecs) override;
 	void getTimeAndDate(TimeDate &td, bool skipRecord = false) const override;

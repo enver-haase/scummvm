@@ -47,6 +47,7 @@
 #include "backends/keymapper/hardware-input.h"
 #include "backends/mutex/sdl/sdl-mutex.h"
 #include "backends/timer/sdl/sdl-timer.h"
+#include "backends/timer/default/default-timer.h"
 #include "backends/graphics/surfacesdl/surfacesdl-graphics.h"
 #ifdef USE_OPENGL
 #include "backends/graphics/openglsdl/openglsdl-graphics.h"
@@ -385,7 +386,8 @@ void OSystem_SDL::initBackend() {
 	g_eventRec.registerTimerManager(new SdlTimerManager());
 #else
 	if (_timerManager == nullptr)
-		_timerManager = new SdlTimerManager();
+		/* Not SdlTimerManager: that is a thread (see tickTimerManager below). */
+		_timerManager = new DefaultTimerManager();
 #endif
 
 	_audiocdManager = createAudioCDManager();
@@ -876,8 +878,29 @@ Common::MutexInternal *OSystem_SDL::createMutex() {
 	return createSdlMutexInternal();
 }
 
+/*
+ * Run the timer manager from whoever asks for the time. SDL's own timer is a thread and this
+ * platform cannot rely on one, so the callbacks would otherwise never fire and the engine would
+ * wait for them for ever. 10 ms is the resolution DefaultTimerManager documents.
+ */
+void OSystem_SDL::tickTimerManager(uint32 millis) {
+	static uint32 last;
+	static bool inside;
+
+	if (inside || !_timerManager)
+		return;
+	if (millis - last < 10)
+		return;
+	last = millis;
+	inside = true;
+	((DefaultTimerManager *)_timerManager)->handler();
+	inside = false;
+}
+
 uint32 OSystem_SDL::getMillis(bool skipRecord) {
 	uint32 millis = SDL_GetTicks();
+
+	tickTimerManager(millis);
 
 #ifdef ENABLE_EVENTRECORDER
 	g_eventRec.processMillis(millis, skipRecord);
@@ -891,6 +914,7 @@ void OSystem_SDL::delayMillis(uint msecs) {
 	if (g_eventRec.processDelayMillis())
 #endif
 		SDL_Delay(msecs);
+	tickTimerManager(SDL_GetTicks());
 }
 
 void OSystem_SDL::getTimeAndDate(TimeDate &td, bool skipRecord) const {
