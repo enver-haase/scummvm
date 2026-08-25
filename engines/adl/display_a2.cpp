@@ -83,24 +83,30 @@ const byte Display_A2::_font[64][8] = {
 };
 
 struct LineDoubleBright {
+	/* The result is the line above, unchanged, so blendScanlines() can copy it wholesale
+	 * instead of taking every pixel apart and putting it back together. */
+	static const bool kIsLineCopy = true;
 	static uint8 blend(uint8 c1, uint8 c2) {
 		return c1;
 	}
 };
 
 struct LineDoubleDim {
+	static const bool kIsLineCopy = false;
 	static uint8 blend(uint8 c1, uint8 c2) {
 		return (c1 >> 1) + (c1 >> 2);
 	}
 };
 
 struct BlendBright {
+	static const bool kIsLineCopy = false;
 	static uint8 blend(uint8 c1, uint8 c2) {
 		return (c1 + c2) >> 1;
 	}
 };
 
 struct BlendDim {
+	static const bool kIsLineCopy = false;
 	static uint8 blend(uint8 c1, uint8 c2) {
 		// AppleWin does c1 >>= 2; return (c1 < c2 ? c2 - c1 : 0);
 		// I think the following looks a lot better:
@@ -365,15 +371,28 @@ private:
 	template<typename Reader, typename Writer>
 	void render(Writer &writer);
 
+	template<typename Reader, typename Writer>
+	void renderRange(Writer &writer, uint startY, uint endY);
+
 	ColorType *_renderBuf;
 	uint16 _doublePixelMasks[128];
+
+	/* What the text screen looked like when it was last drawn, so that only the rows that
+	 * actually changed have to be drawn again (see renderText). */
+	byte _lastTextBuf[kTextWidth * kTextHeight];
+	bool _lastBlink;
+	bool _lastShowCursor;
+	int  _lastMode;
+	bool _haveLastText;
 
 	GfxWriter _writerColor;
 	TextWriter _writerMono;
 };
 
 template<typename ColorType, typename GfxWriter, typename TextWriter>
-DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::DisplayImpl_A2() : _doublePixelMasks() {
+DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::DisplayImpl_A2() : _doublePixelMasks(),
+		_lastTextBuf(), _lastBlink(false), _lastShowCursor(false), _lastMode(-1),
+		_haveLastText(false) {
 	_renderBuf = new ColorType[kRenderBufHeight * kRenderBufWidth]();
 
 	for (uint8 val = 0; val < ARRAYSIZE(_doublePixelMasks); ++val)
@@ -390,8 +409,14 @@ DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::~DisplayImpl_A2() {
 template<typename ColorType, typename GfxWriter, typename TextWriter>
 template<typename Reader, typename Writer>
 void DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::render(Writer &writer) {
-	uint startY = Reader::getStartY(this);
-	const uint endY = Reader::getEndY(this);
+	renderRange<Reader>(writer, Reader::getStartY(this), Reader::getEndY(this));
+}
+
+template<typename ColorType, typename GfxWriter, typename TextWriter>
+template<typename Reader, typename Writer>
+void DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::renderRange(Writer &writer, uint startYArg, uint endYArg) {
+	uint startY = startYArg;
+	const uint endY = endYArg;
 
 	ColorType *ptr = _renderBuf + startY * kRenderBufWidth * 2;
 
@@ -444,6 +469,18 @@ template<typename BlendType>
 void DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::blendScanlines(uint yStart, uint yEnd) {
 	const Graphics::PixelFormat rgbFormat = g_system->getScreenFormat();
 
+	if (BlendType::kIsLineCopy) {
+		// Nothing to blend: the odd line is the even line above it. Copying skips two
+		// colorToRGB and one RGBToColor per pixel, which is the whole frame time on hardware
+		// where a byte access is a function call.
+		for (uint y = yStart; y < yEnd; ++y) {
+			ColorType *buf = &_renderBuf[y * 2 * kRenderBufWidth];
+
+			memcpy(buf + kRenderBufWidth, buf, kRenderBufWidth * sizeof(ColorType));
+		}
+		return;
+	}
+
 	// Note: this reads line yEnd * 2 of _renderBuf!
 	for (uint y = yStart; y < yEnd; ++y) {
 		ColorType *buf = &_renderBuf[y * 2 * kRenderBufWidth];
@@ -470,12 +507,65 @@ void DisplayImpl_A2<ColorType, GfxWriter, TextWriter>::renderText() {
 	if (_mode == kModeGraphics)
 		return;
 
+	const bool oldBlink = _blink;
+
 	_blink = (g_system->getMillis() / 270) & 1;
 
+	/*
+	 * Work out which character rows can have changed since the last time this ran. Drawing a row
+	 * costs 560x16 pixels through the pixel writer, so on slow hardware the difference between
+	 * "the row with the cursor" and "the whole screen" is the difference between a cursor that
+	 * blinks and one that crawls.
+	 */
+	const uint firstY = TextReader::getStartY(this);
+	const uint lastY = TextReader::getEndY(this);
+	const uint firstRow = firstY >> 3;
+	const uint lastRow = (lastY + 7) >> 3;
+	const bool blinkMoved = (_blink != oldBlink) || (_showCursor != _lastShowCursor);
+	const bool everything = !_haveLastText || _lastMode != (int)_mode;
+	uint dirtyFirst = lastRow, dirtyLast = firstRow;
+
+	for (uint row = firstRow; row < lastRow && !everything; ++row) {
+		bool dirty = false;
+
+		for (uint col = 0; col < kTextWidth && !dirty; ++col) {
+			const uint pos = row * kTextWidth + col;
+			const byte m = _textBuf[pos];
+
+			if (m != _lastTextBuf[pos])
+				dirty = true;
+			else if (blinkMoved &&
+				 ((_showCursor && pos == _cursorPos) ||   /* the cursor cell   */
+				  (!(m & 0x80) && (m & 0x40))))           /* a flashing char   */
+				dirty = true;
+		}
+
+		if (dirty) {
+			if (row < dirtyFirst)
+				dirtyFirst = row;
+			dirtyLast = row + 1;
+		}
+	}
+
+	uint startY = firstY, endY = lastY;
+
+	if (!everything) {
+		if (dirtyFirst >= dirtyLast)
+			return;                         /* identical frame: nothing to draw */
+		startY = dirtyFirst << 3;
+		endY = MIN<uint>(dirtyLast << 3, lastY);
+	}
+
 	if (_mode == kModeMixed && _enableColor && !_enableMonoText)
-		render<TextReader>(_writerColor);
+		renderRange<TextReader>(_writerColor, startY, endY);
 	else
-		render<TextReader>(_writerMono);
+		renderRange<TextReader>(_writerMono, startY, endY);
+
+	memcpy(_lastTextBuf, _textBuf, sizeof(_lastTextBuf));
+	_lastBlink = _blink;
+	_lastShowCursor = _showCursor;
+	_lastMode = (int)_mode;
+	_haveLastText = true;
 }
 
 template<typename ColorType, typename GfxWriter, typename TextWriter>
