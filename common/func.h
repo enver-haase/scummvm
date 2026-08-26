@@ -398,10 +398,10 @@ class Functor0Mem : public Functor0<Res> {
 public:
 	typedef Res (T::*FuncType)();
 
-	__attribute__((optnone)) Functor0Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	Functor0Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	__attribute__((optnone)) Res operator()() const override {
+	Res operator()() const override {
 		return (_t->*_func)();
 	}
 private:
@@ -461,10 +461,10 @@ class Functor1Mem : public Functor1<Arg, Res> {
 public:
 	typedef Res (T::*FuncType)(Arg);
 
-	__attribute__((optnone)) Functor1Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	Functor1Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	__attribute__((optnone)) Res operator()(Arg v1) const override {
+	Res operator()(Arg v1) const override {
 		return (_t->*_func)(v1);
 	}
 private:
@@ -517,10 +517,10 @@ class Functor2Mem : public Functor2<Arg1, Arg2, Res> {
 public:
 	typedef Res (T::*FuncType)(Arg1, Arg2);
 
-	__attribute__((optnone)) Functor2Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
+	Functor2Mem(T *t, const FuncType &func) : _t(t), _func(func) {}
 
 	bool isValid() const override { return _func != 0 && _t != 0; }
-	__attribute__((optnone)) Res operator()(Arg1 v1, Arg2 v2) const override {
+	Res operator()(Arg1 v1, Arg2 v2) const override {
 		return (_t->*_func)(v1, v2);
 	}
 private:

@@ -85,7 +85,7 @@ class SeekableReadStream;
 	struct CustomXMLKeyLayout : public XMLKeyLayout {\
 		typedef bool (parserName::*ParserCallback)(ParserNode *node);\
 		ParserCallback callback;\
-		__attribute__((optnone)) bool doCallback(XMLParser *parent, ParserNode *node) override {return ((kLocalParserName *)parent->*callback)(node);} };\
+		bool doCallback(XMLParser *parent, ParserNode *node) override {return ((kLocalParserName *)parent->*callback)(node);} };\
 	void buildLayout() override { \
 		Common::Stack<XMLKeyLayout *> layout; \
 		CustomXMLKeyLayout *lay = 0; \
